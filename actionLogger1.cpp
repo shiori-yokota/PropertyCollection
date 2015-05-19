@@ -9,6 +9,7 @@
 #include <map>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/stat.h>
 #include "quatanion.h"
 
 #define PI 3.141592
@@ -31,7 +32,6 @@ public:
 	double gettimeofday_sec();
 	void moveByKinect();
 	void moveByOrs();
-	std::string getLocalTime();
 	std::string get_time();
 	//string FloatToString(float x);
 
@@ -110,30 +110,6 @@ double ActionLogger::gettimeofday_sec(){
 	struct timeval t;
 	gettimeofday(&t, NULL);
 	return (double)t.tv_sec + (double)t.tv_usec * 1e-6;
-}
-
-std::string ActionLogger::getLocalTime(){
-	time_t timer;
-	struct tm *local;
-
-	timer = time(NULL);
-	local = localtime(&timer);
-	double year = local->tm_year + 1900;
-	double month = local->tm_mon + 1;
-	double day = local->tm_mday;
-	double hour = local->tm_hour;
-	double minute = local->tm_min;
-	double second = local->tm_sec;
-
-	ss << year << std::setw(2) << std::setfill('0') << month << std::setw(2) << std::setfill('0') << day << std::setw(2) << std::setfill('0') << hour << std::setw(2) << std::setfill('0') << minute << std::setw(2) << std::setfill('0') << second;
-
-	string name = name_man + "_actionLog_";
-	name += ss.str() + ".txt";
-
-	ss.str("");
-	ss.clear(stringstream::goodbit);
-
-	return name;
 }
 
 std::string ActionLogger::get_time(void){
@@ -240,37 +216,39 @@ void ActionLogger::onInit(InitEvent &evt)
 	time_pre_target = 0;
 	time_diff = 0;
 	
-	logName = "man_0_actionLog_20140929214957.txt";
+	//logName = "man_0_actionLog_20140929214957.txt";
 	
-	Elbow = FolderName + "/" + "elbow" + ".csv";
-	Hand = FolderName + "/" + "hand" + ".csv";
-	Head = FolderName + "/" + "head" + ".csv";
-	Ors = FolderName + "/" + "ors" + ".csv";
-	Xtion = FolderName + "/" + "xtion" + ".csv";
-	Waist = FolderName + "/" + "waist" + ".csv";
-	Arm = FolderName + "/" + "arm" + ".csv";
+//	Elbow = FolderName + "/" + "elbow" + ".csv";
+//	Hand = FolderName + "/" + "hand" + ".csv";
+//	Head = FolderName + "/" + "head" + ".csv";
+//	Ors = FolderName + "/" + "ors" + ".csv";
+//	Xtion = FolderName + "/" + "xtion" + ".csv";
+//	Waist = FolderName + "/" + "waist" + ".csv";
+//	Arm = FolderName + "/" + "arm" + ".csv";
 
-	ofstream clear(Waist.c_str(), ios::trunc);
-	waist.open(Waist.c_str(), ios::app);
-	ofstream clear2(Arm.c_str(), ios::trunc);
-	arm.open(Arm.c_str(), ios::app);
-	ofstream clear3(Ors.c_str(), ios::trunc);
-	log_ors.open(Ors.c_str(), ios::app);
-	ofstream clear4(Xtion.c_str(), ios::trunc);
-	log_xtion.open(Xtion.c_str(), ios::app);
-	ofstream clear5(Hand.c_str(), ios::trunc);
-	log_hand.open(Hand.c_str(), ios::app);
-	ofstream clear6(Head.c_str(), ios::trunc);
-	log_head.open(Head.c_str(), ios::app);
-	ofstream clear7(Elbow.c_str(), ios::trunc);
-	log_elbow.open(Elbow.c_str(), ios::app);
+//	ofstream clear(Waist.c_str(), ios::trunc);
+//	waist.open(Waist.c_str(), ios::app);
+//	ofstream clear2(Arm.c_str(), ios::trunc);
+//	arm.open(Arm.c_str(), ios::app);
+//	ofstream clear3(Ors.c_str(), ios::trunc);
+//	log_ors.open(Ors.c_str(), ios::app);
+//	ofstream clear4(Xtion.c_str(), ios::trunc);
+//	log_xtion.open(Xtion.c_str(), ios::app);
+//	ofstream clear5(Hand.c_str(), ios::trunc);
+//	log_hand.open(Hand.c_str(), ios::app);
+//	ofstream clear6(Head.c_str(), ios::trunc);
+//	log_head.open(Head.c_str(), ios::app);
+//	ofstream clear7(Elbow.c_str(), ios::trunc);
+//	log_elbow.open(Elbow.c_str(), ios::app);
 }
 
 void ActionLogger::writeActionLog(std::string msg)
 {
 	if (writeInit == true){
 		writeInit = false;
-		logName = getLocalTime();
+		TimeNum = get_time();
+		logName = name_man + "/" + TimeNum + ".txt";
+		
 		ofstream clear(logName.c_str(), ios::trunc);
 		ofs.open(logName.c_str(), ios::app);
 	}
@@ -572,6 +550,11 @@ void ActionLogger::onRecvMsg(RecvMsgEvent &evt)
 		if (write != true){
 			sendMsg("man_0" , "rec");
 			sendMsg("SIGViewer", "Rec Start\n");
+						
+			TimeNum = get_time();
+			FolderName = name_man + "/" + TimeNum;
+			if(mkdir(name_man.c_str(),S_IEXEC|S_IWRITE|S_IREAD) != 0);
+			
 			write = true;
 			writeInit = true;
 			time_start = gettimeofday_sec();
@@ -588,9 +571,10 @@ void ActionLogger::onRecvMsg(RecvMsgEvent &evt)
 	}
 	else if (all_msg == "play"){
 		if (play != true){
-			sendMsg("voiceLog1", "play");
+			//sendMsg("voiceLog1", "play");
 			sendMsg(name_man, "play");
 			sendMsg("SIGViewer", "Play Start\n");
+						
 			play = true;
 			write = false;
 			time_start = gettimeofday_sec();
