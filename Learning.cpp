@@ -32,6 +32,7 @@ class MyController : public Controller {
 		BaseService* m_srv_DB;
 		BaseService* m_capture;
 		BaseService* m_kinect;
+		BaseService* m_ors;
 		
 		//Position of Human
 		SimObj *Human;
@@ -82,6 +83,7 @@ class MyController : public Controller {
 
 void MyController::onInit(InitEvent &evt) {
 	m_kinect = NULL;
+	m_ors = NULL;
 	m_srv_Message = NULL;
 	m_srv_Voice = NULL;
 	m_srv_DB = NULL;
@@ -130,11 +132,12 @@ void MyController::onInit(InitEvent &evt) {
 	Human->setJointAngle("RARM_JOINT2", DEG2RAD(90));
 	
 	//Properties
-	Attributes.push_back("name");
-	Attributes.push_back("color");
-	Attributes.push_back("shape");
-	Attributes.push_back("how to use");
-	Attributes.push_back("state");
+	Attributes.push_back("�F");
+	Attributes.push_back("�`");
+	Attributes.push_back("���");
+	
+	Attributes.push_back("���O");
+	Attributes.push_back("�g����");
 }
 
 double MyController::onAction(ActionEvent &evt) {
@@ -204,12 +207,12 @@ double MyController::onAction(ActionEvent &evt) {
 		if(!this->recognizeObj(obName)){
 			//State of stay
 			m_state = 100;
-			LOG_MSG(("7 to 100: FINISH"));
+			//LOG_MSG(("7 to 100: FINISH"));
 			break;
 		}
 		else {
 			m_state = 10;
-			LOG_MSG(("7 to 10"));
+			//LOG_MSG(("7 to 10"));
 			break;
 		}
 		break;
@@ -298,8 +301,12 @@ double MyController::onAction(ActionEvent &evt) {
 		//Use take pictures
 		else {
 			bool available_Kinect = checkService("SIGKINECT");
+			bool available_Ors = checkService("SIGORS");
+			bool available_Capture = checkService("AvatarView");
 			
 			bool Connect_Kinect = false;
+			bool Connect_Ors = false;
+			bool Connect_Capture = false;
 			
 			if (available_Kinect && m_kinect == NULL){
 				m_kinect = connectToService("SIGKINECT");
@@ -308,9 +315,23 @@ double MyController::onAction(ActionEvent &evt) {
 			else if (!available_Kinect && m_kinect != NULL){
 				m_kinect = NULL;
 			}
-			
-			if(Connect_Kinect){
-				LOG_MSG(("Kinect is Connected"));
+			if (available_Ors && m_ors == NULL){
+				m_ors = connectToService("SIGORS");
+				Connect_Ors = true;
+			}
+			else if (!available_Ors && m_ors != NULL){
+				m_ors = NULL;
+			}
+			if (available_Capture && m_capture == NULL){
+				m_capture = connectToService("AvatarView");
+				Connect_Ors = true;
+			}
+			else if (!available_Capture && m_capture != NULL){
+				m_capture = NULL;
+			}
+						
+			if(Connect_Kinect && Connect_Ors && Connect_Capture){
+				LOG_MSG(("Kinect, Oculus and Capture are Connected"));
 				m_state = 100;
 				break;
 			}
@@ -384,12 +405,32 @@ void MyController::onRecvMsg(RecvMsgEvent &evt) {
 	//Take picture
 	if (ss == "rec"){
 		//m_voice_rec->sendMsgToSrv("rec");
-		//m_capture->sendMsgToSrv("capture");
+		m_capture->sendMsgToSrv("capture");
 	}
 	
 	//Back to the position based on the object
 	if (ss == "put"){
 		m_state = 30;
+	}
+	
+	if (headStr == "Property"){
+		strSplit(bodyStr, " ");
+		LOG_MSG(("FileName is %s",headStr.c_str()));
+		if(m_view != NULL){
+			ViewImage *img = m_view->captureView(1, COLORBIT_24, IMAGE_320X240);
+			
+			if(img != NULL){
+				char *buf = img->getBuffer();
+				
+				std::string AvaterViewName;
+				AvaterViewName = headStr + "/" + bodyStr + "_AvaterView.bmp";
+				LOG_MSG(("BMPName is %s",AvaterViewName.c_str()));
+				img->saveAsWindowsBMP(AvaterViewName.c_str());
+				
+				delete img;
+			}
+		}
+		else LOG_MSG(("m_view is null"));
 	}
 	
 }
@@ -430,21 +471,35 @@ void MyController::QuestionGeneration() {
 	
 	string Attribute;
 	Attribute = Attributes[a_index].c_str();
-	Question = "what is this " + Attribute + "?";
+	Question = "�����" + Attribute + "�� �Ȃ�ł���";
 	LOG_MSG(("question : %s", Question.c_str()));
 	
-	m_srv_DB->sendMsgToSrv(Attribute);
+	if(Attribute == "�F"){
+		m_srv_DB->sendMsgToSrv("color");
+	}
+	else if(Attribute == "���O"){
+		m_srv_DB->sendMsgToSrv("name");
+	}
+	else if(Attribute == "�`"){
+		m_srv_DB->sendMsgToSrv("shape");
+	}
+	else if(Attribute == "���"){
+		m_srv_DB->sendMsgToSrv("state");
+	}
+	else if(Attribute == "�g����"){
+		m_srv_DB->sendMsgToSrv("how_to_use");
+	}
 /*
-	Voice_msg.push_back("これの名前はなんですか");
-	Voice_msg.push_back("ほかに、呼び方はありますか");
-	Voice_msg.push_back("これは、どういう色ですか");
-	Voice_msg.push_back("ほかに、色の特徴はありますか");
-	Voice_msg.push_back("これは、どんな形ですか");
-	Voice_msg.push_back("ほかに、形の特徴はありますか");
-	Voice_msg.push_back("これの使い方はなんですか");
-	Voice_msg.push_back("ほかに、使い方はありますか");
-	Voice_msg.push_back("これは、どういう状態ですか");
-	Voice_msg.push_back("ほかに、わかることはありますか");
+	Voice_msg.push_back("����̖��O�͂Ȃ�ł���");
+	Voice_msg.push_back("�ق��ɁA�Ăѕ��͂���܂���");
+	Voice_msg.push_back("����́A�ǂ������F�ł���");
+	Voice_msg.push_back("�ق��ɁA�F�̓����͂���܂���");
+	Voice_msg.push_back("����́A�ǂ�Ȍ`�ł���");
+	Voice_msg.push_back("�ق��ɁA�`�̓����͂���܂���");
+	Voice_msg.push_back("����̎g�����͂Ȃ�ł���");
+	Voice_msg.push_back("�ق��ɁA�g�����͂���܂���");
+	Voice_msg.push_back("����́A�ǂ�������Ԃł���");
+	Voice_msg.push_back("�ق��ɁA�킩�邱�Ƃ͂���܂���");
 */	
 }
 
@@ -599,6 +654,8 @@ bool MyController::recognizeObj(std::string &name) {
 	else{
 		//Get the name of the object
 		name = obj_name[count];
+		string objNameMsg = "ObjName " + name;
+		sendMsg("logger1",objNameMsg);
 		object = getObj(name.c_str());
 		object->getPosition(ini_pos);
 		object->getRotation(ini_rot);
