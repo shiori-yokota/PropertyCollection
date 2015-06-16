@@ -26,6 +26,7 @@ public:
 	void onRecvMsg(RecvMsgEvent &evt);
 	void onInit(InitEvent &evt);
 	void writeActionLog(std::string msg);
+	void writePose(std::string msg);
 	void readActionLog();
 	void playActionLog(double time);
 	void strSplit(string msg, string separator);
@@ -37,28 +38,36 @@ public:
 
 
 private:
-	//�����ʒu                                                                    
+	//úÊu                                                                    
 	double m_posx, m_posy, m_posz;
 	double m_yrot;
 	double m_range;
-	//�f�[�^���i�֐ߐ��j�ő�l                                                    
+	//f[^iÖßjÅål                                                    
 	int m_maxsize;
 
 	BaseService* m_kinect;
 	BaseService* m_ors;
 	BaseService* m_view;
+	
+	ViewService* view;
 
 	Vector3d m_pos;
 	Rotation m_rotation;
 	string body_str;
 	int count;
 	ofstream ofs;
+	ofstream ofs_relpos;
+	ofstream ofs_pose;
 	stringstream ss;
+	stringstream ss_relpos;
+	stringstream ss_pose;
 
 	bool play;
 	bool write;
 	bool playLog;
 	bool writeInit;
+	bool pickUp;
+	
 	double time_init;
 	double time_start;
 	double time_current;
@@ -67,6 +76,7 @@ private:
 	int logSize;
 	vector<string> actionLog;
 	string logName;
+	string logName2;
 
 	int ors_count;
 	int xtion_count;
@@ -75,15 +85,19 @@ private:
 	double time_pre_target;
 	double time_diff;
 
-	// �O�񑗐M����yaw, pitch roll
+	// OñMµœyaw, pitch roll
 	double pyaw, ppitch, proll;
-	// �̑S�̂̊p�x
+	// ÌSÌÌpx
 	double m_qw, m_qy, m_qx, m_qz;
 
 	string headStr;
 	string bodyStr;
 
 	std::string name_man;
+	std::string rp_name;
+	std::string obj_name;
+	std::string property;
+	std::string Pick_up;
 
 	ofstream waist;
 	ofstream arm;
@@ -96,6 +110,7 @@ private:
 	
 	//Folder name
 	std::string FolderName;
+	std::string rp_FolderName;
 	std::string TimeNum;
 	std::string Elbow;
 	std::string Hand;
@@ -160,9 +175,12 @@ void ActionLogger::strSplit(string msg, string separator)
 
 void ActionLogger::onInit(InitEvent &evt)
 {
+	view = (ViewService*)connectToService("SIGViewer");
+	
 	play = false;
 	write = false;
 	writeInit = false;
+	pickUp = false;
 	
 	time_start = 0;
 	time_current = 0;
@@ -171,19 +189,21 @@ void ActionLogger::onInit(InitEvent &evt)
 	logSize = 0;
 
 	name_man = "man_0";
+	rp_name = "RelativePosition";
+	Pick_up = "PickUp";
 
 	body_str = "";
 
 	SimObj *my = getObj(name_man.c_str());
 
-	// �����ʒu�擾                                                            
+	// úÊuæŸ                                                            
 	Vector3d pos;
 	my->getPosition(pos);
 	m_posx = pos.x();
 	m_posy = pos.y();
 	m_posz = pos.z();
 
-	// �����p���i��]�j�擾                                                                                           
+	// úpšiñ]jæŸ                                                                                           
 	Rotation rot;
 	my->getRotation(rot);
 	double qw = rot.qw();
@@ -196,7 +216,7 @@ void ActionLogger::onInit(InitEvent &evt)
 	m_range = 0.1;
 	m_maxsize = 15;
 
-	// �̑S�̂̌���
+	// ÌSÌÌü«
 	m_qw = 1.0;
 	m_qx = 0.0;
 	m_qy = 0.0;
@@ -208,6 +228,7 @@ void ActionLogger::onInit(InitEvent &evt)
 	
 	TimeNum = get_time();
 	FolderName = name_man + "/" + TimeNum;
+	rp_FolderName = rp_name + "/" + TimeNum;
 	
 	ors_count = 0;
 	xtion_count = 0;
@@ -244,28 +265,81 @@ void ActionLogger::onInit(InitEvent &evt)
 
 void ActionLogger::writeActionLog(std::string msg)
 {
+	SimObj *my = getObj(name_man.c_str());
+	SimObj *obj = getObj(obj_name.c_str());	
 	if (writeInit == true){
 		writeInit = false;
 		TimeNum = get_time();
 		logName = name_man + "/" + TimeNum + ".txt";
+		logName2 = rp_name + "/" + TimeNum + ".txt";
 		
 		ofstream clear(logName.c_str(), ios::trunc);
 		ofs.open(logName.c_str(), ios::app);
+		ofstream clear2(logName2.c_str(), ios::trunc);
+		ofs_relpos.open(logName2.c_str(), ios::app);
 	}
 
-	//���O�Ƃ��ċL�^������
-	//����
+	//OÆµÄL^·éîñ
+	//Ô
 	time_current = gettimeofday_sec() - time_start;
 	ss << "TIME:" << time_current << " ";
 	ss << msg;
-
 	body_str += ss.str();
-
 	ofs << body_str << std::endl;
+	
+	stringstream msg_head_ors;
+	ss_relpos << "TIME:" << time_current << " ";
+	strSplit(msg, " ");
+	//人の向いている方向
+	if (headStr == "ORS_DATA"){
+		msg_head_ors << bodyStr;
+		ss_relpos << headStr << " " << msg_head_ors.str();
+	}
+	//人の頭の位置、物体の向き、物体の位置
+	//getjoint頭（xyz）、物体（xyz、クオータニオン）
+	Vector3d head_pos;
+	my->getJointPosition(head_pos, "HEAD_JOINT1");
+	ss_relpos << " HumanHeadPosition" << " " << head_pos.x() << "," << head_pos.y() << "," << head_pos.z();
+	
+	Rotation obj_rot;
+	obj->getRotation(obj_rot);
+	ss_relpos << " ObjectRotation" << " " << obj_rot.qw() << "," << obj_rot.qx() << "," << obj_rot.qy() << "," << obj_rot.qz();
+	
+	Vector3d obj_pos;
+	obj->getPosition(obj_pos);
+	ss_relpos << " ObjectPosition" << " " << obj_pos.x() << "," << obj_pos.y() << "," << obj_pos.z();
+	
+	
+	ofs_relpos << ss_relpos.str() << std::endl;
 
 	body_str = "";
+	
 	ss.str("");
 	ss.clear(stringstream::goodbit);
+	ss_relpos.str("");
+	ss_relpos.clear(stringstream::goodbit);
+	
+}
+
+void ActionLogger::writePose(std::string msg)
+{
+
+	pickUp = false;
+	std::string fileName = Pick_up + "/" + property + ".txt";
+	
+	ofstream clear_pose(fileName.c_str(), ios::trunc);
+	ofs_pose.open(fileName.c_str(), ios::app);
+	
+	time_current = gettimeofday_sec() - time_start;
+	ss_pose << "TIME:" << time_current << std::endl;
+	ss_pose << msg;
+	body_str += ss_pose.str();
+	ofs_pose << body_str << std::endl;
+	
+	body_str = "";
+
+	ss_pose.str("");
+	ss_pose.clear(stringstream::goodbit);
 
 }
 
@@ -282,7 +356,7 @@ void ActionLogger::readActionLog()
 
 void ActionLogger::moveByKinect()
 {
-	//�������g�̎擾                                                              
+	//©ª©gÌæŸ                                                              
 	SimObj *my = getObj(name_man.c_str());
 
 	int i = 0;
@@ -292,7 +366,7 @@ void ActionLogger::moveByKinect()
 		if (i == m_maxsize + 1) break;
 		strSplit(bodyStr, ":");
 
-		//�̂̈ʒu                                                            
+		//ÌÌÊu                                                            
 		if (headStr == "POSITION")
 		{
 			strSplit(bodyStr, ",");
@@ -301,14 +375,14 @@ void ActionLogger::moveByKinect()
 			double y = atof(headStr.c_str());
 			strSplit(bodyStr, " ");
 			double z = atof(headStr.c_str());
-			//�L�l�N�g���W����SIGVerse���W�ւ̕ϊ�                            
+			//LlNgÀW©çSIGVerseÀWÖÌÏ·                            
 			double gx = cos(m_yrot)*x - sin(m_yrot)*z;
 			double gz = sin(m_yrot)*x + cos(m_yrot)*z;
 			my->setPosition(m_posx + gx, m_posy + y, m_posz + gz);
 			continue;
 		}
 
-		//�̑S�̂̉�]                                                        
+		//ÌSÌÌñ]                                                        
 		else if (headStr == "WAIST")
 		{
 			strSplit(bodyStr, ",");
@@ -335,7 +409,7 @@ void ActionLogger::moveByKinect()
 
 
 
-		//�֐߂̉�]                                                          
+		//ÖßÌñ]                                                          
 		else
 		{
 			string type = headStr.c_str();
@@ -386,7 +460,7 @@ void ActionLogger::moveByKinect()
 
 void ActionLogger::moveByOrs()
 {
-	//�������g�̎擾                                                              
+	//©ª©gÌæŸ                                                              
 	SimObj *my = getObj(name_man.c_str());
 
 	double yaw, pitch, roll;
@@ -446,7 +520,7 @@ void ActionLogger::moveByOrs()
 
 void ActionLogger::playActionLog(double time)
 {
-	//���b�Z�[�W�擾
+	//bZ[WæŸ
 	if (logSize > logIndex){
 		string all_msg = actionLog[logIndex];
 
@@ -461,14 +535,14 @@ void ActionLogger::playActionLog(double time)
 			{
 				time_diff = time_target - time_pre_target;
 				
-				//�Ώۂ̎擾
+				//ÎÛÌæŸ
 				SimObj *my = getObj(name_man.c_str());
 				strSplit(bodyStr, " ");
 				if (headStr == "KINECT_DATA"){
 					log_xtion << all_msg << std::endl;
 					moveByKinect();
 
-					//���̈ʒu�ƁC��̈ʒu�̏o��
+					//ªÌÊuÆCèÌÊuÌoÍ
 					Vector3d man_0_Rhand;
 					Vector3d man_0_Lhand;
 					Vector3d man_0_head;
@@ -527,6 +601,7 @@ double ActionLogger::onAction(ActionEvent &evt)
 			playActionLog(time_current);
 		}
 
+
 		bool available_Capture = checkService("AvatarView");
 		bool Connect_Capture = false;
 		if (available_Capture && m_view == NULL){
@@ -536,6 +611,7 @@ double ActionLogger::onAction(ActionEvent &evt)
 		else if (!available_Capture && m_view != NULL){
 			m_view = NULL;
 		}
+
 		return 0.001;
 }
 
@@ -543,56 +619,96 @@ void ActionLogger::onRecvMsg(RecvMsgEvent &evt)
 {
 	std::string sender = evt.getSender();
 
-	//���b�Z�[�W�擾                                                              
+	//bZ[WæŸ                                                              
 	string all_msg = evt.getMsg();
-	
-	if (all_msg == "rec"){
-		if (write != true){
-			sendMsg("man_0" , "rec");
-			sendMsg("SIGViewer", "Rec Start\n");
-						
-			TimeNum = get_time();
-			FolderName = name_man + "/" + TimeNum;
-			if(mkdir(name_man.c_str(),S_IEXEC|S_IWRITE|S_IREAD) != 0);
+	/*
+	if(sender == "sigverse_DB"){
+		property = all_msg;
+		//pose
+		pickUp = true;
+		//capture
+		std::string msg2man = "Property " + Pick_up + " " + property;
+		LOG_MSG(("send to man -> %s",msg2man.c_str()));
+		sendMsg("man_0", msg2man);
+		if(view != NULL){
+			ViewImage *img = view->captureView(1, COLORBIT_24, IMAGE_320X240);
 			
-			write = true;
-			writeInit = true;
-			time_start = gettimeofday_sec();
-			LOG_MSG(("Rec Start :%4f", time_start - time_init));
+			if(img != NULL){
+				char *buf = img->getBuffer();
+
+				std::string ThirdPartyViewName;
+				ThirdPartyViewName = Pick_up + "/" + property + "_ThirdPartyView.bmp";
+				LOG_MSG(("BMPName is %s",ThirdPartyViewName.c_str()));
+				img->saveAsWindowsBMP(ThirdPartyViewName.c_str());
+				
+				delete img;
+			}
 		}
+		else LOG_MSG(("m_view is null"));
 	}
-	else if (all_msg == "stop"){
-		broadcastMsg("stop");
-		double time = gettimeofday_sec() - time_init;
-		sendMsg("SIGViewer", "Rec Stop\n");
-		LOG_MSG(("Rec Stop  :%4f", time));
-		LOG_MSG(("Rec Time  :%4f\n", time - (time_start - time_init)));
-		write = false;
-	}
-	else if (all_msg == "play"){
-		if (play != true){
-			//sendMsg("voiceLog1", "play");
-			sendMsg(name_man, "play");
-			sendMsg("SIGViewer", "Play Start\n");
+	
+	else{*/
+		if (all_msg == "rec"){
+			if (write != true){
+				sendMsg("man_0" , "rec");
+				sendMsg("SIGViewer", "Rec Start\n");
 						
-			play = true;
-			write = false;
-			time_start = gettimeofday_sec();
-			LOG_MSG(("logFile:%s", logName.c_str()));
-			LOG_MSG(("Play Start:%4f", time_start - time_init));
-			readActionLog();
+				TimeNum = get_time();
+				FolderName = name_man + "/" + TimeNum;
+				rp_FolderName = rp_name + "/" + TimeNum;
+				Pick_up += "/" + TimeNum;
+				if(mkdir(name_man.c_str(),S_IEXEC|S_IWRITE|S_IREAD) != 0);
+				if(mkdir("RelativePosition",S_IEXEC|S_IWRITE|S_IREAD) != 0);
+				if(mkdir(Pick_up.c_str(),S_IEXEC|S_IWRITE|S_IREAD) != 0);
+			
+				write = true;
+				writeInit = true;
+				time_start = gettimeofday_sec();
+				LOG_MSG(("Rec Start :%4f", time_start - time_init));
+			}
 		}
-	}
-	else if (all_msg == "getTime"){
-		std::ostringstream oss;
-		oss << time_current;
-		//cout << oss.str() << endl;
-		//LOG_MSG(("logger1 : %s", all_msg.c_str()));
-		m_view->sendMsgToSrv(oss.str());
-	}
-	else if (write == true){
-		writeActionLog(all_msg);
-	}
+		else if (all_msg == "stop"){
+			broadcastMsg("stop");
+			double time = gettimeofday_sec() - time_init;
+			sendMsg("SIGViewer", "Rec Stop\n");
+			LOG_MSG(("Rec Stop  :%4f", time));
+			LOG_MSG(("Rec Time  :%4f\n", time - (time_start - time_init)));
+			write = false;
+		}
+		else if (all_msg == "play"){
+			if (play != true){
+				//sendMsg("voiceLog1", "play");
+				sendMsg(name_man, "play");
+				sendMsg("SIGViewer", "Play Start\n");
+						
+				play = true;
+				write = false;
+				time_start = gettimeofday_sec();
+				LOG_MSG(("logFile:%s", logName.c_str()));
+				LOG_MSG(("Play Start:%4f", time_start - time_init));
+				readActionLog();
+			}
+		}
+		else if (all_msg == "getTime"){
+			std::ostringstream oss;
+			oss << time_current;
+			//cout << oss.str() << endl;
+			//LOG_MSG(("logger1 : %s", all_msg.c_str()));
+			m_view->sendMsgToSrv(oss.str());
+		}
+		else if (write == true){
+			writeActionLog(all_msg);
+		}
+		else if(pickUp == true){
+			writePose(all_msg);
+		}
+		//if(sender == "man_0"){
+		strSplit(all_msg, " ");
+		if(headStr == "ObjName"){
+			obj_name = bodyStr;
+			LOG_MSG(("Object Name is %s",obj_name.c_str()));
+		}
+	//}
 	
 }
 
