@@ -26,7 +26,6 @@ public:
 	void onRecvMsg(RecvMsgEvent &evt);
 	void onInit(InitEvent &evt);
 	void writeActionLog(std::string msg);
-	void writePose(std::string msg);
 	void readActionLog();
 	void playActionLog(double time);
 	void strSplit(string msg, string separator);
@@ -80,6 +79,7 @@ private:
 
 	int ors_count;
 	int xtion_count;
+	int dataCount;
 	double time_ors;
 	double time_xtion;
 	double time_pre_target;
@@ -187,6 +187,7 @@ void ActionLogger::onInit(InitEvent &evt)
 	time_target = 0;
 	logIndex = 0;
 	logSize = 0;
+	dataCount = 0;
 
 	name_man = "man_0";
 	rp_name = "RelativePosition";
@@ -319,28 +320,6 @@ void ActionLogger::writeActionLog(std::string msg)
 	ss_relpos.str("");
 	ss_relpos.clear(stringstream::goodbit);
 	
-}
-
-void ActionLogger::writePose(std::string msg)
-{
-
-	pickUp = false;
-	std::string fileName = Pick_up + "/" + property + ".txt";
-	
-	ofstream clear_pose(fileName.c_str(), ios::trunc);
-	ofs_pose.open(fileName.c_str(), ios::app);
-	
-	time_current = gettimeofday_sec() - time_start;
-	ss_pose << "TIME:" << time_current << std::endl;
-	ss_pose << msg;
-	body_str += ss_pose.str();
-	ofs_pose << body_str << std::endl;
-	
-	body_str = "";
-
-	ss_pose.str("");
-	ss_pose.clear(stringstream::goodbit);
-
 }
 
 void ActionLogger::readActionLog()
@@ -618,98 +597,77 @@ double ActionLogger::onAction(ActionEvent &evt)
 void ActionLogger::onRecvMsg(RecvMsgEvent &evt)
 {
 	std::string sender = evt.getSender();
-
 	//bZ[WæŸ                                                              
 	string all_msg = evt.getMsg();
-	/*
-	if(sender == "sigverse_DB"){
-		property = all_msg;
-		//pose
-		pickUp = true;
-		//capture
-		std::string msg2man = "Property " + Pick_up + " " + property;
-		LOG_MSG(("send to man -> %s",msg2man.c_str()));
-		sendMsg("man_0", msg2man);
-		if(view != NULL){
-			ViewImage *img = view->captureView(1, COLORBIT_24, IMAGE_320X240);
-			
-			if(img != NULL){
-				char *buf = img->getBuffer();
-
-				std::string ThirdPartyViewName;
-				ThirdPartyViewName = Pick_up + "/" + property + "_ThirdPartyView.bmp";
-				LOG_MSG(("BMPName is %s",ThirdPartyViewName.c_str()));
-				img->saveAsWindowsBMP(ThirdPartyViewName.c_str());
-				
-				delete img;
-			}
+	strSplit(all_msg, " ");
+	
+	if (all_msg == "rec"){
+		if (write != true){
+			sendMsg("man_0" , "rec");
+			sendMsg("SIGViewer", "Rec Start\n");
+					
+			TimeNum = get_time();
+			std::string msg = "Time " + TimeNum;
+			sendMsg("man_0", msg);
+			FolderName = name_man + "/" + TimeNum;
+			rp_FolderName = rp_name + "/" + TimeNum;
+			Pick_up += "/" + TimeNum;
+			if(mkdir(name_man.c_str(),S_IEXEC|S_IWRITE|S_IREAD) != 0);
+			if(mkdir("RelativePosition",S_IEXEC|S_IWRITE|S_IREAD) != 0);
+			if(mkdir(Pick_up.c_str(),S_IEXEC|S_IWRITE|S_IREAD) != 0);
+		
+			write = true;
+			writeInit = true;
+			time_start = gettimeofday_sec();
+			LOG_MSG(("Rec Start :%4f", time_start - time_init));
 		}
-		else LOG_MSG(("m_view is null"));
+	}
+	else if (all_msg == "stop"){
+		broadcastMsg("stop");
+		double time = gettimeofday_sec() - time_init;
+		sendMsg("SIGViewer", "Rec Stop\n");
+		LOG_MSG(("Rec Stop  :%4f", time));
+		LOG_MSG(("Rec Time  :%4f\n", time - (time_start - time_init)));
+		write = false;
+	}
+	else if (all_msg == "play"){
+		if (play != true){
+			//sendMsg("voiceLog1", "play");
+			sendMsg(name_man, "play");
+			sendMsg("SIGViewer", "Play Start\n");
+					
+			play = true;
+			write = false;
+			time_start = gettimeofday_sec();
+			LOG_MSG(("logFile:%s", logName.c_str()));
+			LOG_MSG(("Play Start:%4f", time_start - time_init));
+			readActionLog();
+		}
+	}
+	else if (all_msg == "getTime"){
+		std::ostringstream oss;
+		oss << time_current;
+		//cout << oss.str() << endl;
+		//LOG_MSG(("logger1 : %s", all_msg.c_str()));
+		m_view->sendMsgToSrv(oss.str());
 	}
 	
-	else{*/
-		if (all_msg == "rec"){
-			if (write != true){
-				sendMsg("man_0" , "rec");
-				sendMsg("SIGViewer", "Rec Start\n");
-						
-				TimeNum = get_time();
-				FolderName = name_man + "/" + TimeNum;
-				rp_FolderName = rp_name + "/" + TimeNum;
-				Pick_up += "/" + TimeNum;
-				if(mkdir(name_man.c_str(),S_IEXEC|S_IWRITE|S_IREAD) != 0);
-				if(mkdir("RelativePosition",S_IEXEC|S_IWRITE|S_IREAD) != 0);
-				if(mkdir(Pick_up.c_str(),S_IEXEC|S_IWRITE|S_IREAD) != 0);
-			
-				write = true;
-				writeInit = true;
-				time_start = gettimeofday_sec();
-				LOG_MSG(("Rec Start :%4f", time_start - time_init));
-			}
-		}
-		else if (all_msg == "stop"){
-			broadcastMsg("stop");
-			double time = gettimeofday_sec() - time_init;
-			sendMsg("SIGViewer", "Rec Stop\n");
-			LOG_MSG(("Rec Stop  :%4f", time));
-			LOG_MSG(("Rec Time  :%4f\n", time - (time_start - time_init)));
-			write = false;
-		}
-		else if (all_msg == "play"){
-			if (play != true){
-				//sendMsg("voiceLog1", "play");
-				sendMsg(name_man, "play");
-				sendMsg("SIGViewer", "Play Start\n");
-						
-				play = true;
-				write = false;
-				time_start = gettimeofday_sec();
-				LOG_MSG(("logFile:%s", logName.c_str()));
-				LOG_MSG(("Play Start:%4f", time_start - time_init));
-				readActionLog();
-			}
-		}
-		else if (all_msg == "getTime"){
-			std::ostringstream oss;
-			oss << time_current;
-			//cout << oss.str() << endl;
-			//LOG_MSG(("logger1 : %s", all_msg.c_str()));
-			m_view->sendMsgToSrv(oss.str());
-		}
-		else if (write == true){
+	if (write == true){
+		if(all_msg != "getTime"){
 			writeActionLog(all_msg);
 		}
-		else if(pickUp == true){
-			writePose(all_msg);
-		}
-		//if(sender == "man_0"){
-		strSplit(all_msg, " ");
-		if(headStr == "ObjName"){
-			obj_name = bodyStr;
-			LOG_MSG(("Object Name is %s",obj_name.c_str()));
-		}
-	//}
-	
+	}
+
+	//if(sender == "man_0"){
+	strSplit(all_msg, " ");
+	if(headStr == "ObjName"){
+		obj_name = bodyStr;
+		LOG_MSG(("Object Name is %s",obj_name.c_str()));
+		std::string objNameMsg = all_msg;
+		m_view->sendMsgToSrv(objNameMsg);
+		LOG_MSG(("man_0 send Msg to view service : %s",objNameMsg.c_str()));
+	}	
+
 }
 
 extern "C"  Controller * createController()
