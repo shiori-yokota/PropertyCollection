@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <unistd.h>
 #include <sstream>
+#include <fstream>
 #include <string>
 
 #define DEG2RAD(DEG) ( (M_PI) * (DEG) / 180.0 )
@@ -22,6 +23,7 @@ class MyController : public Controller {
 		void strSplit(string msg, string separator);
 		void moveBodyByKINECT();
 		void moveBodyByOrs();
+		void writeActionLog(std::string msg);
 		bool recognizeObj(string &name);
 		void string2double(const string &str);
 	
@@ -61,12 +63,25 @@ class MyController : public Controller {
 		bool start;
 		bool m_grasp;
 		bool play;
+		bool pickUpOrs;
+		bool pickUpKinect;
+		
+		std::string folderName;
+		std::string property;
 		
 		//vector<string> Voice_msg;
 		vector<string> Attributes;
 		string Question;
 		//int v_index;
 		int a_index;
+		
+		ofstream ofs;
+		stringstream ss_ors;
+		stringstream ss_kinect;
+		stringstream ss_relpos;
+		stringstream msg_head_ors;
+		std::string fileName;
+		std::string dir_prop;
 		
 		vector<string> MSG;
 		string obName;
@@ -120,6 +135,8 @@ void MyController::onInit(InitEvent &evt) {
 	count = 0;
 	start = true;
 	m_grasp = false;
+	pickUpOrs = false;
+	pickUpKinect = false;
 
 	m_view = (ViewService*)connectToService("SIGViewer");
 	//Check services
@@ -134,10 +151,10 @@ void MyController::onInit(InitEvent &evt) {
 	//Properties
 	Attributes.push_back("色");
 	Attributes.push_back("形");
-	Attributes.push_back("状態");
+	Attributes.push_back("付属物");
 	
-	Attributes.push_back("名前");
-	Attributes.push_back("使い方");
+	Attributes.push_back("名称");
+	Attributes.push_back("用途");
 }
 
 double MyController::onAction(ActionEvent &evt) {
@@ -324,7 +341,7 @@ double MyController::onAction(ActionEvent &evt) {
 			}
 			if (available_Capture && m_capture == NULL){
 				m_capture = connectToService("AvatarView");
-				Connect_Ors = true;
+				Connect_Capture = true;
 			}
 			else if (!available_Capture && m_capture != NULL){
 				m_capture = NULL;
@@ -375,11 +392,30 @@ void MyController::onRecvMsg(RecvMsgEvent &evt) {
 		if (headStr == "ORS_DATA"){
 			moveBodyByOrs();
 			sendMsg("logger1", ss);
+			if(pickUpOrs == true){
+				writeActionLog(ss);
+			}
 		}
 		else if (headStr == "KINECT_DATA"){
 			moveBodyByKINECT();
 			sendMsg("logger1", ss);
+			if(pickUpKinect == true){
+				writeActionLog(ss);
+			}
 		}
+	}
+	
+	if(headStr == "Time"){
+		folderName = "PickUp/" + bodyStr;
+		LOG_MSG(("Folder name is %s",folderName.c_str()));
+		dir_prop = "DirProp:" + folderName + "/";
+		sendMsg("sigverse_DB", dir_prop);
+	}
+	else if(headStr == "PickUp"){
+		property = bodyStr;
+		LOG_MSG(("property is %s",property.c_str()));
+		pickUpOrs = true;
+		pickUpKinect = true;
 	}
 
 	if (ss == "fin"){
@@ -412,27 +448,6 @@ void MyController::onRecvMsg(RecvMsgEvent &evt) {
 	if (ss == "put"){
 		m_state = 30;
 	}
-	
-	if (headStr == "Property"){
-		strSplit(bodyStr, " ");
-		LOG_MSG(("FileName is %s",headStr.c_str()));
-		if(m_view != NULL){
-			ViewImage *img = m_view->captureView(1, COLORBIT_24, IMAGE_320X240);
-			
-			if(img != NULL){
-				char *buf = img->getBuffer();
-				
-				std::string AvaterViewName;
-				AvaterViewName = headStr + "/" + bodyStr + "_AvaterView.bmp";
-				LOG_MSG(("BMPName is %s",AvaterViewName.c_str()));
-				img->saveAsWindowsBMP(AvaterViewName.c_str());
-				
-				delete img;
-			}
-		}
-		else LOG_MSG(("m_view is null"));
-	}
-	
 }
 
 void MyController::onCollision(CollisionEvent &evt) {
@@ -477,16 +492,16 @@ void MyController::QuestionGeneration() {
 	if(Attribute == "色"){
 		m_srv_DB->sendMsgToSrv("color");
 	}
-	else if(Attribute == "名前"){
+	else if(Attribute == "名称"){
 		m_srv_DB->sendMsgToSrv("name");
 	}
 	else if(Attribute == "形"){
 		m_srv_DB->sendMsgToSrv("shape");
 	}
-	else if(Attribute == "状態"){
-		m_srv_DB->sendMsgToSrv("state");
+	else if(Attribute == "付属物"){
+		m_srv_DB->sendMsgToSrv("attachment");
 	}
-	else if(Attribute == "使い方"){
+	else if(Attribute == "用途"){
 		m_srv_DB->sendMsgToSrv("how_to_use");
 	}
 /*
@@ -638,6 +653,71 @@ void MyController::moveBodyByOrs() {
 	dQMultiply0(tmpQ2, tmpQ1, qroll);
 
 	Human->setJointQuaternion("HEAD_JOINT0", tmpQ2[0], tmpQ2[1]-m_qx, -tmpQ2[2]-m_qy, tmpQ2[3]-m_qz);
+}
+
+void MyController::writeActionLog(std::string msg)
+{
+
+	if(pickUpOrs == true && pickUpKinect == true){
+		fileName = folderName + "/" + obName + "_" + property + ".txt";
+		
+		ofstream clear(fileName.c_str(), ios::trunc);
+	}
+	
+	ofs.open(fileName.c_str(), ios::app);
+	
+	if(!ofs){
+		std::cout << "don't open" <<std::endl;
+	}
+	
+	strSplit(msg, " ");
+	if(headStr == "ORS_DATA"){
+		LOG_MSG(("write action log %s",headStr.c_str()));
+		ss_ors << msg;
+		ofs << ss_ors.str() << std::endl;
+		pickUpOrs = false;
+		LOG_MSG(("ORS is %d",pickUpOrs));
+	}
+	else if(headStr == "KINECT_DATA"){
+		LOG_MSG(("write action log %s",headStr.c_str()));
+		ss_kinect << msg;
+		ofs << ss_kinect.str() << std::endl;
+		pickUpKinect = false;
+		LOG_MSG(("KINECT is %d",pickUpKinect));
+	}
+	
+	//人の頭の位置、物体の向き、物体の位置
+	//getjoint頭（xyz）、物体（xyz、クオータニオン）
+	if(pickUpOrs != true && pickUpKinect != true){
+		ofs << std::endl;
+		ofs << "relative position" << std::endl;
+		strSplit(msg, " ");
+		if (headStr == "ORS_DATA"){
+			msg_head_ors << bodyStr;
+			ss_relpos << headStr << " " << msg_head_ors.str();
+		}
+		Vector3d head_pos;
+		Human->getJointPosition(head_pos, "HEAD_JOINT1");
+		ss_relpos << " HumanHeadPosition" << " " << head_pos.x() << "," << head_pos.y() << "," << head_pos.z();
+	
+		Rotation obj_rot;
+		object->getRotation(obj_rot);
+		ss_relpos << " ObjectRotation" << " " << obj_rot.qw() << "," << obj_rot.qx() << "," << obj_rot.qy() << "," << obj_rot.qz();
+	
+		Vector3d obj_pos;
+		object->getPosition(obj_pos);
+		ss_relpos << " ObjectPosition" << " " << obj_pos.x() << "," << obj_pos.y() << "," << obj_pos.z();
+	}
+	
+	ofs << ss_relpos.str() << std::endl;
+	
+	ofs.close();
+	ss_ors.str("");
+	ss_ors.clear(stringstream::goodbit);
+	ss_kinect.str("");
+	ss_kinect.clear(stringstream::goodbit);
+	ss_relpos.str("");
+	ss_relpos.clear(stringstream::goodbit);
 }
 
 void MyController::string2double(const std::string &str) {
